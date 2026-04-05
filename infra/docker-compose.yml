@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: sme-db
+    environment:
+      - POSTGRES_USER=kong
+      - POSTGRES_PASSWORD=kongpassword
+      - POSTGRES_DB=kong
+    networks:
+      - sme-network
+    ports:
+      - "5432:5432"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.0
+    container_name: sme-idp
+    command: start-dev
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/kong
+      - KC_DB_USERNAME=kong
+      - KC_DB_PASSWORD=kongpassword
+      - KC_HOSTNAME_STRICT=false
+      - KC_HTTP_ENABLED=true
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+    networks:
+      - sme-network
+
+  kong:
+    image: kong:latest
+    container_name: sme-gateway
+    user: "root"
+    environment:
+      - KONG_DATABASE=off
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+      - "8001:8001"
+    networks:
+      - sme-network
+
+networks:
+  sme-network:
+    driver: bridge
