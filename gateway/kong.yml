@@ -1,0 +1,10 @@
+_format_version: "3.0"
+
+services:
+  - name: fastapi-backend
+    url: http://backend:8000 # Trỏ thẳng vào tên container của FastAPI
+    routes:
+      - name: backend-route
+        paths:
+          - /api
+        strip_path: false # Giữ nguyên chữ /api khi đẩy xuống backend

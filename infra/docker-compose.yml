@@ -1,6 +1,9 @@
 version: "3.8"
 
 services:
+  # -----------------------------------------------------
+  # 1. POSTGRESQL (Nơi lưu trữ của Keycloak & App)
+  # -----------------------------------------------------
   postgres:
     image: postgres:15
     container_name: sme-db
@@ -11,7 +14,9 @@ services:
       - POSTGRES_DB=${DB_NAME}
     networks:
       - sme-network
-
+  # -----------------------------------------------------
+  # 2. KEYCLOAK (Identity Provider)
+  # -----------------------------------------------------
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.0
     container_name: sme-idp
@@ -35,7 +40,25 @@ services:
       - postgres
     networks:
       - sme-network
-
+  # -----------------------------------------------------
+  # 3. FASTAPI (Backend Service)
+  # -----------------------------------------------------
+  backend:
+    build:
+      context: ../services/api-backend # Trỏ ra thư mục code backend
+      dockerfile: Dockerfile
+    container_name: sme-backend
+    environment:
+      - DB_HOST=postgres
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      - postgres
+    networks:
+      - sme-network
+  # -----------------------------------------------------
+  # 4. KONG API GATEWAY (Người gác cổng)
+  # -----------------------------------------------------
   kong:
     image: kong:latest
     container_name: sme-gateway
