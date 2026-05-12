@@ -1,18 +1,45 @@
-
+# =========================
+# 1. Môi trường & IDE
+# =========================
 .vscode/
 .idea/
-
-
 .DS_Store
 Thumbs.db
 
-
+# =========================
+# 2. Security & Secrets 
+# =========================
 .env
+.env.*
 *.pem
 *.key
+*.crt
 secrets/
+infra/certs/*
+!infra/certs/.gitkeep
 
-
-node_modules/
+# =========================
+# 3. Python & FastAPI (Thư mục services)
+# =========================
 __pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.pytest_cache/
+
+# =========================
+# 4. Docker, Database & Logs
+# =========================
 *.log
+docker-data/
+pgdata/
+vault-data/
+
+# =========================
+# 5. Pentest & Evaluation Tools
+# =========================
+*postman_environment.json
+zap-reports/
+node_modules/

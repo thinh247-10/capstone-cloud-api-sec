@@ -1,29 +1,32 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres:
-    image: postgres:13
+    image: postgres:15
     container_name: sme-db
     environment:
-      - POSTGRES_USER=kong
-      - POSTGRES_PASSWORD=kongpassword
-      - POSTGRES_DB=kong
+      # Lấy dữ liệu từ file .env
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
     networks:
       - sme-network
-    ports:
-      - "5432:5432"
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.0
     container_name: sme-idp
     command: start-dev
     environment:
-      - KEYCLOAK_ADMIN=admin
-      - KEYCLOAK_ADMIN_PASSWORD=admin
+      # Lấy dữ liệu từ file .env
+      - KEYCLOAK_ADMIN=${KC_ADMIN_USER}
+      - KEYCLOAK_ADMIN_PASSWORD=${KC_ADMIN_PASSWORD}
+
+      # Cấu hình kết nối DB (Tái sử dụng các biến DB ở trên)
       - KC_DB=postgres
-      - KC_DB_URL=jdbc:postgresql://postgres:5432/kong
-      - KC_DB_USERNAME=kong
-      - KC_DB_PASSWORD=kongpassword
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/${DB_NAME}
+      - KC_DB_USERNAME=${DB_USER}
+      - KC_DB_PASSWORD=${DB_PASSWORD}
+
       - KC_HOSTNAME_STRICT=false
       - KC_HTTP_ENABLED=true
     ports:
@@ -36,14 +39,17 @@ services:
   kong:
     image: kong:latest
     container_name: sme-gateway
-    user: "root"
     environment:
+      # Các thông số hệ thống tĩnh của Kong có thể giữ nguyên
       - KONG_DATABASE=off
+      - KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml
       - KONG_PROXY_ACCESS_LOG=/dev/stdout
       - KONG_ADMIN_ACCESS_LOG=/dev/stdout
       - KONG_PROXY_ERROR_LOG=/dev/stderr
       - KONG_ADMIN_ERROR_LOG=/dev/stderr
       - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+    volumes:
+      - ./gateway/kong.yml:/kong/declarative/kong.yml
     ports:
       - "8000:8000"
       - "8443:8443"
