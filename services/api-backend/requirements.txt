@@ -1,2 +1,4 @@
 fastapi
 uvicorn[standard]
+cryptography  # Thư viện chuẩn của Python để mã hóa AES-GCM
+hvac          # SDK chính thức để nói chuyện với HashiCorp Vault
