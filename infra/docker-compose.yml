@@ -1,56 +1,78 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:13
+
+  sme-db:
+    image: postgres:15
     container_name: sme-db
     environment:
-      - POSTGRES_USER=kong
-      - POSTGRES_PASSWORD=kongpassword
-      - POSTGRES_DB=kong
-    networks:
-      - sme-network
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: kongpassword
+      POSTGRES_DB: kong
     ports:
       - "5432:5432"
+    networks:
+      - private_net
 
-  keycloak:
+  sme-backend:
+    build: ../services
+    container_name: sme-backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - sme-db
+    networks:
+      - private_net
+
+  sme-idp:
     image: quay.io/keycloak/keycloak:24.0.0
     container_name: sme-idp
     command: start-dev
     environment:
-      - KEYCLOAK_ADMIN=admin
-      - KEYCLOAK_ADMIN_PASSWORD=admin
-      - KC_DB=postgres
-      - KC_DB_URL=jdbc:postgresql://postgres:5432/kong
-      - KC_DB_USERNAME=kong
-      - KC_DB_PASSWORD=kongpassword
-      - KC_HOSTNAME_STRICT=false
-      - KC_HTTP_ENABLED=true
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://sme-db:5432/kong
+      KC_DB_USERNAME: kong
+      KC_DB_PASSWORD: kongpassword
+      KC_HOSTNAME_STRICT: false
+      KC_HTTP_ENABLED: true
     ports:
       - "8081:8080"
     depends_on:
-      - postgres
+      - sme-db
     networks:
-      - sme-network
+      - public_net
+      - private_net
 
-  kong:
-    image: kong:latest
+  sme-gateway:
+    image: kong:3.6
     container_name: sme-gateway
-    user: "root"
+    user: root
     environment:
-      - KONG_DATABASE=off
-      - KONG_PROXY_ACCESS_LOG=/dev/stdout
-      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
-      - KONG_PROXY_ERROR_LOG=/dev/stderr
-      - KONG_ADMIN_ERROR_LOG=/dev/stderr
-      - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+      KONG_DATABASE: off
+      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
     ports:
       - "8000:8000"
-      - "8443:8443"
       - "8001:8001"
+    volumes:
+      - ../gateway:/kong/declarative
+    depends_on:
+      - sme-backend
     networks:
-      - sme-network
+      - public_net
+      - private_net
 
 networks:
-  sme-network:
+
+  public_net:
     driver: bridge
+
+  private_net:
+    driver: bridge
+    internal: true
