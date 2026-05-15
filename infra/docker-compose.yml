@@ -2,31 +2,29 @@ version: "3.8"
 
 services:
   # -----------------------------------------------------
-  # 1. POSTGRESQL (Nơi lưu trữ của Keycloak & App)
+  # 1. POSTGRESQL
   # -----------------------------------------------------
   postgres:
     image: postgres:15
     container_name: sme-db
     environment:
-      # Lấy dữ liệu từ file .env
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
     networks:
       - private_net
+
   # -----------------------------------------------------
-  # 2. KEYCLOAK (Identity Provider)
+  # 2. KEYCLOAK
   # -----------------------------------------------------
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.0
     container_name: sme-idp
     command: start-dev --import-realm
     environment:
-      # Lấy dữ liệu từ file .env
       - KEYCLOAK_ADMIN=${KC_ADMIN_USER}
       - KEYCLOAK_ADMIN_PASSWORD=${KC_ADMIN_PASSWORD}
 
-      # Cấu hình kết nối DB (Tái sử dụng các biến DB ở trên)
       - KC_DB=postgres
       - KC_DB_URL=jdbc:postgresql://postgres:5432/${DB_NAME}
       - KC_DB_USERNAME=${DB_USER}
@@ -43,12 +41,13 @@ services:
     networks:
       - public_net
       - private_net
+
   # -----------------------------------------------------
-  # 3. FASTAPI (Backend Service)
+  # 3. FASTAPI
   # -----------------------------------------------------
   backend:
     build:
-      context: ../services/api-backend # Trỏ ra thư mục code backend
+      context: ../services/api-backend
       dockerfile: Dockerfile
     container_name: sme-backend
     environment:
@@ -59,21 +58,21 @@ services:
       - postgres
     networks:
       - private_net
+
   # -----------------------------------------------------
-  # 4. KONG API GATEWAY (Người gác cổng)
+  # 4. KONG
   # -----------------------------------------------------
   kong:
     image: kong:latest
     container_name: sme-gateway
     environment:
-      # Các thông số hệ thống tĩnh của Kong có thể giữ nguyên
       - KONG_DATABASE=off
       - KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml
       - KONG_PROXY_ACCESS_LOG=/dev/stdout
       - KONG_ADMIN_ACCESS_LOG=/dev/stdout
       - KONG_PROXY_ERROR_LOG=/dev/stderr
       - KONG_ADMIN_ERROR_LOG=/dev/stderr
-      - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001,0.0.0.0:8444 ssl
     volumes:
       - ../gateway:/kong/declarative
     ports:
@@ -84,9 +83,27 @@ services:
       - public_net
       - private_net
 
+  # -----------------------------------------------------
+  # 5. VAULT
+  # -----------------------------------------------------
+  vault:
+    image: hashicorp/vault:1.13
+    container_name: sme-vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    command: vault server -dev
+    networks:
+      - private_net
+
 networks:
   public_net:
     driver: bridge
+
   private_net:
     driver: bridge
-    internal: true 
+    internal: true
