@@ -56,6 +56,16 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
     depends_on:
       - postgres
+    volumes:
+      - ./certs:/certs:ro    # <-- Kéo kho cert vào container
+    command: >               # <-- Bật khiên mTLS cho Uvicorn
+      uvicorn main:app 
+      --host 0.0.0.0 
+      --port 8000 
+      --ssl-keyfile /certs/backend/backend.key 
+      --ssl-certfile /certs/backend/backend_fullchain.crt 
+      --ssl-ca-certs /certs/ca/root_ca.crt 
+      --ssl-cert-reqs 2
     networks:
       - private_net
 
@@ -73,8 +83,25 @@ services:
       - KONG_PROXY_ERROR_LOG=/dev/stderr
       - KONG_ADMIN_ERROR_LOG=/dev/stderr
       - KONG_ADMIN_LISTEN=0.0.0.0:8001,0.0.0.0:8444 ssl
+      
+      # Chỉ cho phép TLS 1.3 (Tắt TLS 1.2, 1.1, 1.0)
+      - KONG_SSL_PROTOCOLS="TLSv1.3"      
+      - KONG_NGINX_PROXY_SSL_PROTOCOLS=TLSv1.3
+      # Định nghĩa Cipher Suite (Chỉ dùng các thuật toán AEAD an toàn nhất)
+      - KONG_SSL_CIPHERS="TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"  
+      # Tắt tính năng 0-RTT của TLS 1.3 ở mức Nginx để chống Replay Attack
+      - KONG_NGINX_HTTP_SSL_EARLY_DATA="off"
+
+      # Khai báo Chứng chỉ cho mặt tiền của Kong (để phục vụ user bên ngoài)
+      - KONG_SSL_CERT=/certs/kong/kong_fullchain.crt
+      - KONG_SSL_CERT_KEY=/certs/kong/kong.key
+      # Khai báo Root CA 
+      - KONG_LUA_SSL_TRUSTED_CERTIFICATE=/certs/ca/root_ca.crt
+      - KONG_LUA_SSL_VERIFY_DEPTH=1
     volumes:
       - ../gateway:/kong/declarative
+      # Mount toàn bộ thư mục certs vào trong Kong
+      - ./certs:/certs:ro
     ports:
       - "8000:8000"
       - "8443:8443"
