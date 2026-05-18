@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from crypto_service import CryptoService
+from fastapi import Request, Header, Depends
+from dpop_service import DPoPService
 
 # Khởi tạo ứng dụng FastAPI (Nó sẽ tự tạo Swagger UI cho bạn!)
 app = FastAPI(
@@ -60,3 +62,42 @@ def verify_keycloak_token(token: str):
     # TODO: Mai chúng ta sẽ lấy Public Key từ http://localhost:8081
     # và giải mã JWT token tại đây.
     pass
+
+# --- BỔ SUNG LOGIC DPOP CHO TASK 2.3 ---
+
+def get_access_token_payload(authorization: str = Header(None)):
+    """Hàm giả lập bóc tách Token (Sẽ thay bằng Keycloak sau)"""
+    if not authorization or not authorization.startswith("DPoP "):
+        raise HTTPException(
+            status_code=401, 
+            detail="Yêu cầu định dạng 'Authorization: DPoP <Token>'"
+        )
+    # Giả lập payload JWT do Keycloak trả về (đã chứa sẵn vân tay cnf.jkt)
+    return {
+        "sub": "user_id_12345",
+        "username": "admin",
+        "cnf": {
+            "jkt": "K5INefoVLDFYjeQndfRMopwsVOfRtuz2sXPkVhdrAWg" # Vân tay thiết bị hợp lệ
+        }
+    }
+
+@app.get("/api/secure-data")
+def get_secure_data(
+    request: Request,
+    dpop: str = Header(None), 
+    token_payload: dict = Depends(get_access_token_payload)
+):
+    """Endpoint tuyệt mật, ép buộc phải có DPoP Proof mới được vào"""
+    
+    # Kích hoạt bộ quét bảo mật DPoP
+    DPoPService.verify_dpop_proof(
+        request=request, 
+        dpop_header=dpop, 
+        access_token_payload=token_payload
+    )
+    
+    return {
+        "status": "Success",
+        "data": "Đây là dữ liệu mật cấp độ cao.",
+        "security": "Được bảo vệ bởi DPoP Zero-Trust"
+    }

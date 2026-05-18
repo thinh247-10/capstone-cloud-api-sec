@@ -1,4 +1,5 @@
-fastapi
+fastapi>=0.100.0
 uvicorn[standard]
-cryptography  # Thư viện chuẩn của Python để mã hóa AES-GCM
+cryptography>=42.0.0  # Thư viện chuẩn của Python để mã hóa AES-GCM
 hvac          # SDK chính thức để nói chuyện với HashiCorp Vault
+pyjwt[crypto]>=2.8.0
