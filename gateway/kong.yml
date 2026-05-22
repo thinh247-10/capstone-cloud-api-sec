@@ -8,3 +8,9 @@ services:
         paths:
           - /api
         strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 20
+              hour: 200
+              policy: local
