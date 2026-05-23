@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from crypto_service import CryptoService
 from fastapi import Request, Header, Depends
 from dpop_service import DPoPService
+from middleware import OPAMiddleware  
 
 # Khởi tạo ứng dụng FastAPI (Nó sẽ tự tạo Swagger UI cho bạn!)
 app = FastAPI(
@@ -76,6 +77,7 @@ def get_access_token_payload(authorization: str = Header(None)):
     return {
         "sub": "user_id_12345",
         "username": "admin",
+        "department": "IT",
         "cnf": {
             "jkt": "K5INefoVLDFYjeQndfRMopwsVOfRtuz2sXPkVhdrAWg" # Vân tay thiết bị hợp lệ
         }
@@ -87,15 +89,17 @@ def get_secure_data(
     dpop: str = Header(None), 
     token_payload: dict = Depends(get_access_token_payload)
 ):
-    """Endpoint tuyệt mật, ép buộc phải có DPoP Proof mới được vào"""
+    """Endpoint tuyệt mật: DPoP + OPA"""
     
-    # Kích hoạt bộ quét bảo mật DPoP
+    #1. Lớp khiên 1: Kiểm tra DPoP Proof (Chống Replay Attack)
     DPoPService.verify_dpop_proof(
         request=request, 
         dpop_header=dpop, 
         access_token_payload=token_payload
     )
-    
+    # 2. Lớp khiên 2: Kiểm tra OPA Authorization (Phân quyền ABAC)
+    OPAMiddleware.verify_access(request, user_payload=token_payload, resource_department="IT")
+
     return {
         "status": "Success",
         "data": "Đây là dữ liệu mật cấp độ cao.",

@@ -66,6 +66,7 @@ services:
       --ssl-certfile /certs/backend/backend_fullchain.crt 
       --ssl-ca-certs /certs/ca/root_ca.crt 
       --ssl-cert-reqs 2
+    # command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     networks:
       - private_net
 
@@ -126,6 +127,20 @@ services:
     command: vault server -dev
     networks:
       - private_net
+# -----------------------------------------------------
+  # 6. OPEN POLICY AGENT (OPA)
+  # -----------------------------------------------------
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: sme-opa
+    ports:
+      - "8181:8181"
+    command: "run --server --addr :8181 --log-level=debug /policies"
+    volumes:
+      - ../policies:/policies:ro    
+    networks:
+      - private_net
+      - public_net
 
 networks:
   public_net:
