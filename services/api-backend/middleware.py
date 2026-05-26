@@ -2,7 +2,9 @@ import requests
 from fastapi import Request, HTTPException, status
 
 # Địa chỉ nội bộ của OPA trong mạng Docker
-OPA_URL = "http://opa:8181/v1/data/authz/decision"
+# Sửa đoạn cuối từ /allow thành /decision
+OPA_URL = "http://localhost:8181/v1/data/authz/decision"
+
 
 class OPAMiddleware:
     @staticmethod
