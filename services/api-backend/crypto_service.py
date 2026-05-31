@@ -1,7 +1,6 @@
 import hvac
 import os
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
+import base64
 
 class CryptoService:
     def __init__(self):
@@ -10,25 +9,22 @@ class CryptoService:
             token=os.getenv("VAULT_TOKEN", "root") 
         )
 
-    def get_dek_from_vault(self):
-        # Sử dụng tính năng Transit của Vault để lấy một khóa DEK
-        generate_key_response = self.client.secrets.transit.generate_data_key(
-            name='backend-db-enc', 
-            key_type='plaintext',
+    def encrypt_data(self, plaintext: str) -> dict:
+        """Gửi thẳng dữ liệu cho Vault Transit Engine mã hóa"""
+        # Vault yêu cầu plaintext phải được encode Base64 trước khi gửi
+        encoded_text = base64.b64encode(plaintext.encode('utf-8')).decode('utf-8')
+        
+        # Gọi Vault mã hóa
+        encrypt_response = self.client.secrets.transit.encrypt_data(
+            name='backend-db-enc',
+            plaintext=encoded_text,
             mount_point='transit',
         )
-        # Vault trả về khóa dưới dạng Base64, cần decode ra bytes
-        import base64
-        return base64.b64decode(generate_key_response['data']['plaintext'])
-
-    def encrypt_data(self, plaintext: str) -> dict:
-        #Lấy dek từ Vault theo, logic AES-GCM
-        dek = self.get_dek_from_vault()
-        aesgcm = AESGCM(dek)
-        nonce = os.urandom(12)
-        ciphertext = aesgcm.encrypt(nonce, plaintext.encode('utf-8'), None)
+        
+        # Vault trả về định dạng: vault:v1:xxxxxxxxx
+        ciphertext = encrypt_response['data']['ciphertext']
         
         return {
-            "nonce": nonce.hex(),
-            "ciphertext": ciphertext.hex()
+            "nonce": "vault_managed", # Vault tự quản lý nonce, mình không cần sinh nữa
+            "ciphertext": ciphertext
         }

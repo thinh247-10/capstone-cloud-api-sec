@@ -11,6 +11,7 @@ import models
 from crypto_service import CryptoService
 from dpop_service import DPoPService
 from middleware import OPAMiddleware
+from jwt import PyJWKClient
 
 # Tự động tạo bảng trong DB nếu chưa có
 models.Base.metadata.create_all(bind=engine)
@@ -126,40 +127,49 @@ def verify_keycloak_token(token: str):
             token,
             rsa_key,
             algorithms=["RS256"],
-            options={"verify_aud": False} # Tạm tắt check Audience để dễ test
+            options={"verify_aud": False} 
         )
         return payload
 
     except urllib.error.URLError:
-        raise HTTPException(status_code=503, detail="Lỗi kết nối Keycloak (Cổng 8081 có đang mở không?)")
+        raise HTTPException(status_code=503, detail="Lỗi kết nối Keycloak")
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token đã hết hạn! Vui lòng đăng nhập lại.")
+        raise HTTPException(status_code=401, detail="Token đã hết hạn!")
     except jwt.JWTClaimsError:
-        raise HTTPException(status_code=401, detail="Sai thông tin Claims trong Token.")
+        raise HTTPException(status_code=401, detail="Sai thông tin Claims.")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Token không hợp lệ: {str(e)}")
 
 def get_access_token_payload(authorization: str = Header(None)):
     """Hàm Middleware trích xuất Token từ Request và gọi hàm giải mã"""
     if not authorization or not authorization.startswith("DPoP "):
-        raise HTTPException(
-            status_code=401, 
-            detail="Yêu cầu định dạng 'Authorization: DPoP <Token>'"
-        )
+        raise HTTPException(status_code=401, detail="Yêu cầu định dạng 'Authorization: DPoP <Token>'")
     
+    actual_token = authorization.split(" ")[1]
+
+    # =======================================================
+    # ĐOẠN BYPASS ĐỂ TEST DPOP (Chỉ dùng cho kịch bản test)
+    # Đặt ở đây để nó trả về luôn, KHÔNG gọi hàm giải mã bên dưới
+    # =======================================================
+    #if actual_token == "dummy_token_from_keycloak":
+    #   return {
+    #      "username": "hacker_test",
+    #       "role": "admin",
+    #       "department": "IT",
+    #       "cnf": {"jkt": "lYolfqF5tt3TTh4fkFhpiINB-qqjgsVqrbkjCa6AoBk"} # <--- Nhớ dán mã JKT vào đây
+    #   }
+    # =======================================================
+
     try:
-        actual_token = authorization.split(" ")[1]
         real_payload = verify_keycloak_token(actual_token)
-        
         return {
             "username": real_payload.get("preferred_username", "unknown"),
-            "role": "admin", 
-            "department": "IT", 
-            "cnf": real_payload.get("cnf", {}) # Mã vân tay DPoP từ Keycloak
+            "role": real_payload.get("realm_access", {}).get("roles", ["user"])[0] if real_payload.get("realm_access") else "user", 
+            "department": real_payload.get("department", "unknown"), 
+            "cnf": real_payload.get("cnf", {}) 
         }
     except IndexError:
         raise HTTPException(status_code=401, detail="Định dạng Header DPoP sai.")
-
 # ==============================================================================
 # 4. BẢO VỆ ENDPOINT BẰNG NHIỀU LỚP (ZERO-TRUST)
 # ==============================================================================
