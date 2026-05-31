@@ -4,3 +4,5 @@ cryptography>=42.0.0  # Thư viện chuẩn của Python để mã hóa AES-GCM
 hvac          # SDK chính thức để nói chuyện với HashiCorp Vault
 pyjwt[crypto]>=2.8.0
 requests>=2.31.0
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9

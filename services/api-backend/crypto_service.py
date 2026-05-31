@@ -6,14 +6,14 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 class CryptoService:
     def __init__(self):
         self.client = hvac.Client(
-            url='http://sme-vault:8200',
-            token=os.getenv("VAULT_TOKEN") 
+            url=os.getenv("VAULT_URL", "http://localhost:8200"),
+            token=os.getenv("VAULT_TOKEN", "root") 
         )
 
     def get_dek_from_vault(self):
         # Sử dụng tính năng Transit của Vault để lấy một khóa DEK
         generate_key_response = self.client.secrets.transit.generate_data_key(
-            name='backend-db-enc', # Tên khóa DevOps đã tạo
+            name='backend-db-enc', 
             key_type='plaintext',
             mount_point='transit',
         )

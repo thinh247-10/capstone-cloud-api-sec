@@ -3,11 +3,17 @@ from pydantic import BaseModel
 import urllib.request
 import json
 from jose import jwt
+from sqlalchemy.orm import Session
+from database import engine, get_db, Base
+import models
 
 # Các module nội bộ của dự án
 from crypto_service import CryptoService
 from dpop_service import DPoPService
 from middleware import OPAMiddleware
+
+# Tự động tạo bảng trong DB nếu chưa có
+models.Base.metadata.create_all(bind=engine)
 
 # Khởi tạo ứng dụng FastAPI
 app = FastAPI(
@@ -28,12 +34,31 @@ class User(BaseModel):
 
 class UserCreate(BaseModel):
     username: str
-    cccd: str  # Số CCCD sẽ được mã hóa trước khi lưu vào DB
+    cccd: str  # Dữ liệu nhạy cảm gửi lên (sẽ bị mã hóa)
 
-fake_users_db = [
-    {"id": 1, "username": "thinh", "email": "thinh@example.com", "role": "admin"},
-    {"id": 2, "username": "alice", "email": "alice@example.com", "role": "user"}
-]
+# ĐÂY LÀ LỚP KHIÊN CHỐNG EXCESSIVE DATA EXPOSURE
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    role: str
+
+    class Config:
+        from_attributes = True
+
+# DTO cho Order
+class OrderCreate(BaseModel):
+    item_name: str
+    price: int
+
+class OrderResponse(BaseModel):
+    id: int
+    item_name: str
+    price: int
+    owner_username: str
+
+    class Config:
+        from_attributes = True
 
 # ==============================================================================
 # 2. CÁC ENDPOINT CƠ BẢN (CRUD & ENCRYPTION - TASK 2.1)
@@ -42,25 +67,38 @@ fake_users_db = [
 def read_root():
     return {"message": "Hello from SME API Backend! Hạ tầng đã kết nối thành công."}
 
-@app.get("/users/", response_model=list[User])
-def get_users():
-    """Lấy danh sách tất cả người dùng (Tạm thời chưa khóa Auth)"""
-    return fake_users_db
+@app.get("/users/", response_model=list[UserResponse])
+def get_users(db: Session = Depends(get_db)):
+    """Lấy danh sách tất cả người dùng TỪ DATABASE THẬT"""
+    users = db.query(models.UserDB).all()
+    return users
 
 @app.post("/api/users")
-def create_user(user: UserCreate):
-    """Endpoint tạo user mới - Thực hiện mã hóa CCCD trước khi 'lưu'"""
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    """Endpoint tạo user mới - Lưu trực tiếp xuống PostgreSQL"""
+    
+    # 1. Gọi service Vault để mã hóa CCCD
     encrypted_res = crypto_service.encrypt_data(user.cccd)
 
-    new_user_entry = {
-        "username": user.username,
-        "cccd_ciphertext": encrypted_res["ciphertext"],
-        "cccd_nonce": encrypted_res["nonce"]
-    }
+    # 2. Chuẩn bị dữ liệu Model để nhét vào DB
+    new_db_user = models.UserDB(
+        username=user.username,
+        cccd_ciphertext=encrypted_res["ciphertext"],
+        cccd_nonce=encrypted_res["nonce"]
+    )
+    
+    # 3. Ra lệnh lưu xuống PostgreSQL
+    db.add(new_db_user)
+    db.commit()
+    db.refresh(new_db_user) # Cập nhật lại để lấy được ID do DB cấp
     
     return {
         "status": "Success",
-        "saved_to_db": new_user_entry
+        "message": f"Đã lưu User {new_db_user.username} (ID: {new_db_user.id}) an toàn vào PostgreSQL",
+        "data_saved": {
+            "id": new_db_user.id,
+            "username": new_db_user.username
+        }
     }
 
 # ==============================================================================
@@ -145,9 +183,49 @@ def get_secure_data(
 
     return {
         "status": "Success",
-        "data": "Đây là dữ liệu mật cấp độ cao.",
+        "user_info": token_payload,  # <-- THÊM DÒNG NÀY ĐỂ CHUYỀN DATA ĐI TIẾP
         "security": "Được bảo vệ bởi IdP (Keycloak) + DPoP Zero-Trust + OPA"
     }
+# ==============================================================================
+# 3. MỞ RỘNG API NGHIỆP VỤ (ORDERS) - MỤC 7.1 & 10.2
+# Yêu cầu: Tất cả API ở đây phải bọc middleware OPA & DPoP (get_secure_data)
+# ==============================================================================
+
+@app.post("/api/orders", response_model=OrderResponse)
+def create_order(
+    order: OrderCreate, 
+    db: Session = Depends(get_db),
+    # ĐÂY LÀ LỚP KHIÊN BẢO VỆ: Gọi hàm check Token & OPA trước khi chạy code
+    security_context: dict = Depends(get_secure_data)
+):
+    """Tạo đơn hàng mới (Chỉ dành cho User đã xác thực & OPA cho phép)"""
+    
+    # Lấy thông tin user từ Token (do Keycloak cấp và middleware bóc tách ra)
+    user_info = security_context.get("user_info", {})
+    # SỬA DÒNG DƯỚI ĐÂY: đổi "preferred_username" thành "username"
+    current_username = user_info.get("username", "anonymous")
+    # Lưu xuống DB thật
+    new_order = models.OrderDB(
+        item_name=order.item_name,
+        price=order.price,
+        owner_username=current_username
+    )
+    db.add(new_order)
+    db.commit()
+    db.refresh(new_order)
+    
+    return new_order
+
+
+@app.get("/api/orders", response_model=list[OrderResponse])
+def get_all_orders(
+    db: Session = Depends(get_db),
+    # TIẾP TỤC BỌC KHIÊN BẢO VỆ
+    security_context: dict = Depends(get_secure_data)
+):
+    """Lấy danh sách đơn hàng (OPA kiểm duyệt quyền Read)"""
+    orders = db.query(models.OrderDB).all()
+    return orders
 
 # Entry point để chạy server trực tiếp bằng lệnh `python main.py`
 if __name__ == "__main__":

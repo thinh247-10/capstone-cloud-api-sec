@@ -2,34 +2,36 @@ version: "3.8"
 
 services:
   # -----------------------------------------------------
-  # 1. POSTGRESQL
+  # 1. POSTGRESQL (Chứa cả Keycloak DB & Backend DB)
   # -----------------------------------------------------
   postgres:
     image: postgres:15
     container_name: sme-db
+    ports:                  # Nằm thẳng hàng với chữ image
+      - "5432:5432"         # Thụt lề vào 2 ô space
     environment:
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_NAME}
+      # ... các biến environment ở đây
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-postgres}
     networks:
       - private_net
+      - public_net
 
   # -----------------------------------------------------
-  # 2. KEYCLOAK
+  # 2. KEYCLOAK (Identity Provider)
   # -----------------------------------------------------
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.0
     container_name: sme-idp
     command: start-dev --import-realm
     environment:
-      - KEYCLOAK_ADMIN=${KC_ADMIN_USER}
-      - KEYCLOAK_ADMIN_PASSWORD=${KC_ADMIN_PASSWORD}
-
+      - KEYCLOAK_ADMIN=${KC_ADMIN_USER:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KC_ADMIN_PASSWORD:-admin}
       - KC_DB=postgres
-      - KC_DB_URL=jdbc:postgresql://postgres:5432/${DB_NAME}
-      - KC_DB_USERNAME=${DB_USER}
-      - KC_DB_PASSWORD=${DB_PASSWORD}
-
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/${DB_NAME:-postgres}
+      - KC_DB_USERNAME=${DB_USER:-postgres}
+      - KC_DB_PASSWORD=${DB_PASSWORD:-postgres}
       - KC_HOSTNAME_STRICT=false
       - KC_HTTP_ENABLED=true
     ports:
@@ -43,7 +45,7 @@ services:
       - private_net
 
   # -----------------------------------------------------
-  # 3. FASTAPI
+  # 3. BACKEND (FastAPI)
   # -----------------------------------------------------
   backend:
     build:
@@ -52,13 +54,13 @@ services:
     container_name: sme-backend
     environment:
       - DB_HOST=postgres
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
     depends_on:
       - postgres
     volumes:
-      - ./certs:/certs:ro    # <-- Kéo kho cert vào container
-    command: >               # <-- Bật khiên mTLS cho Uvicorn
+      - ./certs:/certs:ro    
+    command: >               
       uvicorn main:app 
       --host 0.0.0.0 
       --port 8000 
@@ -66,12 +68,11 @@ services:
       --ssl-certfile /certs/backend/backend_fullchain.crt 
       --ssl-ca-certs /certs/ca/root_ca.crt 
       --ssl-cert-reqs 2
-    # command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     networks:
       - private_net
 
   # -----------------------------------------------------
-  # 4. KONG
+  # 4. KONG GATEWAY
   # -----------------------------------------------------
   kong:
     image: kong:latest
@@ -84,24 +85,16 @@ services:
       - KONG_PROXY_ERROR_LOG=/dev/stderr
       - KONG_ADMIN_ERROR_LOG=/dev/stderr
       - KONG_ADMIN_LISTEN=0.0.0.0:8001,0.0.0.0:8444 ssl
-      
-      # Chỉ cho phép TLS 1.3 (Tắt TLS 1.2, 1.1, 1.0)
       - KONG_SSL_PROTOCOLS="TLSv1.3"      
       - KONG_NGINX_PROXY_SSL_PROTOCOLS=TLSv1.3
-      # Định nghĩa Cipher Suite (Chỉ dùng các thuật toán AEAD an toàn nhất)
       - KONG_SSL_CIPHERS="TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"  
-      # Tắt tính năng 0-RTT của TLS 1.3 ở mức Nginx để chống Replay Attack
       - KONG_NGINX_HTTP_SSL_EARLY_DATA="off"
-
-      # Khai báo Chứng chỉ cho mặt tiền của Kong (để phục vụ user bên ngoài)
       - KONG_SSL_CERT=/certs/kong/kong_fullchain.crt
       - KONG_SSL_CERT_KEY=/certs/kong/kong.key
-      # Khai báo Root CA 
       - KONG_LUA_SSL_TRUSTED_CERTIFICATE=/certs/ca/root_ca.crt
       - KONG_LUA_SSL_VERIFY_DEPTH=1
     volumes:
       - ../gateway:/kong/declarative
-      # Mount toàn bộ thư mục certs vào trong Kong
       - ./certs:/certs:ro
     ports:
       - "8000:8000"
@@ -112,7 +105,7 @@ services:
       - private_net
 
   # -----------------------------------------------------
-  # 5. VAULT
+  # 5. HASHICORP VAULT (Kho lưu khóa)
   # -----------------------------------------------------
   vault:
     image: hashicorp/vault:1.13
@@ -127,8 +120,10 @@ services:
     command: vault server -dev
     networks:
       - private_net
-# -----------------------------------------------------
-  # 6. OPEN POLICY AGENT (OPA)
+      - public_net
+
+  # -----------------------------------------------------
+  # 6. OPEN POLICY AGENT (Phân quyền OPA)
   # -----------------------------------------------------
   opa:
     image: openpolicyagent/opa:latest
@@ -145,7 +140,6 @@ services:
 networks:
   public_net:
     driver: bridge
-
   private_net:
     driver: bridge
     internal: true
